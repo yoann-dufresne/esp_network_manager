@@ -43,6 +43,7 @@ private:
 public:
     ServerWifiManager();
     ~ServerWifiManager();
+    void callback(const uint8_t *macAddr, const uint8_t *data, int dataLen);
     uint64_t new_device(uint64_t mac);
 };
 
