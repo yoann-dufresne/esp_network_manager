@@ -2,7 +2,9 @@
 #include <esp_now.h>
 
 
-void basic_callback(const uint8_t *macAddr, const uint8_t *data, int dataLen);
+#ifndef WIFI_MANAGER_H
+#define WIFI_MANAGER_H
+
 void formatMacAddress(const uint8_t *macAddr, char *buffer, int maxLength);
 uint64_t mac2uint(const uint8_t * macAddr);
 
@@ -17,11 +19,10 @@ public:
     bool init();
     void setVerbose(bool verbose);
 
+    void basic_callback(const uint8_t *macAddr, const uint8_t *data, int dataLen);
     void set_receive_callback(esp_now_recv_cb_t callback);
     bool broadcast(const String &message);
 };
-
-
 
 /** The aim of this class is to register all the boards on the local esp network and give them a parent to communicate with. The network
  * is conceived as a hierarchical network. This registry is central and can have 10 children. Each child can also have 10 children. Each
@@ -44,3 +45,5 @@ public:
     ~ServerWifiManager();
     uint64_t new_device(uint64_t mac);
 };
+
+#endif

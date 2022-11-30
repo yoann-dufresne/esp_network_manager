@@ -1,22 +1,5 @@
 #include "WifiManager.hpp"
-
-
-
-
-void basic_callback(const uint8_t *macAddr, const uint8_t *data, int dataLen) {
-    // Prepare mesage
-    char buffer[ESP_NOW_MAX_DATA_LEN + 1];
-    int msgLen = min(ESP_NOW_MAX_DATA_LEN, dataLen);
-    strncpy(buffer, (const char *)data, msgLen);
-    buffer[msgLen] = '\0';
-
-    // Format the MAC address
-    char macStr[18];
-    formatMacAddress(macAddr, macStr, 18);
-
-    // Send Debug log message to the serial port
-    Serial.printf("Received message from: %s - %s\n", macStr, buffer);
-}
+#include <functional>
 
 
 void formatMacAddress(const uint8_t *macAddr, char *buffer, int maxLength) {
@@ -33,6 +16,29 @@ uint64_t mac2uint(const uint8_t * macAddr) {
 }
 
 
+WifiManager * currentManager;
+ServerWifiManager * currentServer;
+
+
+void WifiManager::basic_callback(const uint8_t *macAddr, const uint8_t *data, int dataLen) {
+    // Prepare mesage
+    char buffer[ESP_NOW_MAX_DATA_LEN + 1];
+    int msgLen = min(ESP_NOW_MAX_DATA_LEN, dataLen);
+    strncpy(buffer, (const char *)data, msgLen);
+    buffer[msgLen] = '\0';
+
+    // Format the MAC address
+    char macStr[18];
+    formatMacAddress(macAddr, macStr, 18);
+
+    if (verbose)
+        // Send Debug log message to the serial port
+        Serial.printf("Received message from: %s - %s\n", macStr, buffer);
+}
+
+void static_basic_callback(const uint8_t *macAddr, const uint8_t *data, int dataLen) {
+    currentManager->basic_callback(macAddr, data, dataLen);
+}
 
 WifiManager::WifiManager() {
     this->verbose = false;
@@ -53,8 +59,16 @@ bool WifiManager::init() {
 
     // Initialize ESP-NOW
     if (esp_now_init() == ESP_OK) {
+        // Register callback
         Serial.println("ESP-NOW Init Success");
-        esp_now_register_recv_cb(basic_callback);
+        currentManager = this;
+        esp_now_register_recv_cb(static_basic_callback);
+
+        // Send registration message
+        for (size_t i=0 ; i<100 ; i++) {
+            this->broadcast("C");
+            delay(1000);
+        }
     } else {
         Serial.println("ESP-NOW Init Failed");
         // delay(3000);
@@ -87,6 +101,7 @@ bool WifiManager::broadcast(const String &message) {
     esp_err_t result = esp_now_send(broadcastAddress, (const uint8_t *)message.c_str(), message.length());
 
     if (this->verbose) {
+        Serial.printf("Sending: %s\n", message);
         // Print results to serial monitor
         if (result = ESP_OK) {
             Serial.println("Broadcast message success");
@@ -124,6 +139,23 @@ ServerWifiManager::~ServerWifiManager() {
     delete[] this->parents;
 }
 
+void ServerWifiManager::callback(const uint8_t *macAddr, const uint8_t *data, int dataLen) {
+    // Empty message
+    if (dataLen == 0)
+        return;
+
+    uint64_t uint_mac = mac2uint(macAddr);
+
+    // Connection request
+    if (data[0] == (uint8_t)'C') {
+        uint64_t parent_mac = this->new_device(uint_mac);
+        
+        if (verbose) {
+            Serial.printf("New device %s. Assigned parent %s", uint_mac, parent_mac);
+        }
+    }
+}
+
 
 uint64_t ServerWifiManager::new_device(uint64_t mac) {
     // Verify not already registered
@@ -144,7 +176,7 @@ uint64_t ServerWifiManager::new_device(uint64_t mac) {
             memccpy(tmp_space, this->registry, sizeof(uint64_t), this->max_boards);
             delete[] this->registry; this->registry = tmp_space;
             // Parents transfer
-            uint64_t * tmp_space = new uint64_t[2 * this->max_boards];
+            tmp_space = new uint64_t[2 * this->max_boards];
             memccpy(tmp_space, this->parents, sizeof(uint64_t), this->max_boards);
             delete[] this->parents; this->parents = tmp_space;
 
