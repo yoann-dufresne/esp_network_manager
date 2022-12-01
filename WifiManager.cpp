@@ -50,7 +50,10 @@ bool WifiManager::init() {
     if (this->verbose)
         Serial.println("ESP-NOW Broadcast receiver");
 
-    // Print MAC address
+    // Mac Address
+    WiFi.macAddress(this->macaddress);
+    this->mac_uint = mac2uint(this->macaddress);
+
     Serial.print("My MAC Address: ");
     Serial.println(WiFi.macAddress());
 
@@ -86,6 +89,11 @@ void WifiManager::setVerbose(bool verbose) {
 
 void WifiManager::set_receive_callback(esp_now_recv_cb_t callback) {
     esp_now_register_recv_cb(callback);
+}
+
+
+bool WifiManager::send(uint64_t destination, uint8_t * msg, size_t len) {
+    return true;
 }
 
 
@@ -153,6 +161,21 @@ void ServerWifiManager::callback(const uint8_t *macAddr, const uint8_t *data, in
         if (verbose) {
             Serial.printf("New device %s. Assigned parent %s", uint_mac, parent_mac);
         }
+
+        // Send a direct connection request
+        if (this->mac_uint == parent_mac) {
+            uint8_t msg[1]; msg[0] = 'L';
+            this->send(uint_mac, msg, 1);
+        }
+        // Send indirect connection request
+        else {
+            uint8_t msg[9]; msg[0] = 'T'; msg[1] = 'D'; msg[8] = 'L';
+            for (size_t i=0 ; i<6 ; i++)
+                msg[2+i] = macAddr[i];
+            this->send(parent_mac, msg, 9);
+        }
+    } else {
+        WifiManager::basic_callback(macAddr, data, dataLen);
     }
 }
 

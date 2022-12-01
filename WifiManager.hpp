@@ -13,7 +13,7 @@ class WifiManager {
 protected:
     bool verbose;
     uint8_t macaddress[6];
-
+    uint64_t mac_uint;
 public:
     WifiManager();
     bool init();
@@ -21,6 +21,7 @@ public:
 
     void basic_callback(const uint8_t *macAddr, const uint8_t *data, int dataLen);
     void set_receive_callback(esp_now_recv_cb_t callback);
+    bool send(uint64_t destination, uint8_t * msg, size_t len);
     bool broadcast(const String &message);
 };
 
