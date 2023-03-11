@@ -4,4 +4,4 @@
 **/.vscode/launch.json
 **/.vscode/ipch
 
-src/config.h
+esp_network_base/src/config.h
