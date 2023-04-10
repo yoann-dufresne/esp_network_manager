@@ -1,25 +1,95 @@
-import asyncio, socket
+from threading import Thread
+from time import sleep
+from signal import signal, SIGINT
+import socket
 
-async def handle_client(client):
-    loop = asyncio.get_event_loop()
-    request = None
-    while request != 'quit':
-        request = (await loop.sock_recv(client, 255)).decode('ascii')
-        response = str(request) + '\n'
-        print(response)
-        await loop.sock_sendall(client, response.encode('ascii'))
-    client.close()
 
-async def run_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(('', 15555))
-    server.listen(8)
-    server.setblocking(False)
+class ESPServer(Thread):
 
-    loop = asyncio.get_event_loop()
+    def __init__(self, port=4040):
+        super().__init__()
+        self.started = False
+        self.stopped = False
 
-    while True:
-        client, _ = await loop.sock_accept(server)
-        loop.create_task(handle_client(client))
+        self.port = port
+        self.socket = None
 
-asyncio.run(run_server())
+        self.clients = {}
+
+
+    def run(self):
+        # Create + bind the socket
+        self.socket = socket.create_server(("", self.port))
+        print("socket server created on port", self.port)
+        
+        idx=1
+        self.started = True
+
+        print("Socket server main loop")
+        while not self.stopped:
+            try:
+                clientsocket, address = self.socket.accept()
+                print("New connection from", address)
+                client = Client(clientsocket)
+                client.start()
+                self.clients[address] = client
+            except OSError:
+                continue
+
+        # Stop the socket before the end of the thread
+        self.socket.close()
+
+
+    def stop(self):
+        self.stopped = True
+
+        # Close all connections
+        for client in self.clients.values():
+            client.stop()
+
+        # Close the server
+        self.socket.shutdown(socket.SHUT_RDWR)
+        print("Server stop triggered")
+        self.join()
+
+        print("Server stopped")
+
+
+
+class Client(Thread):
+
+    def __init__(self, socket):
+        super().__init__()
+        self.socket = socket
+        self.stopped = False
+
+
+    def run(self):
+        while not self.stopped:
+            data = None
+            try:
+                data = self.socket.recv(1024)
+            except OSError:
+                continue
+            if not data:
+                # Connection lost
+                self.stopped = True
+                break
+
+            # Use the data
+            print("received", repr(data))
+
+        self.socket.close()
+
+
+    def stop(self):
+        if not self.stopped:
+            self.stopped = True
+            self.socket.shutdown(socket.SHUT_RDWR)
+        self.join()
+
+
+if __name__ == "__main__":
+    server = ESPServer()
+    signal(SIGINT, lambda sig, frame : server.stop())
+    server.start()
