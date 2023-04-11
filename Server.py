@@ -1,6 +1,7 @@
 from threading import Thread
 from time import sleep
 from signal import signal, SIGINT
+from sys import stderr
 import socket
 
 
@@ -30,7 +31,7 @@ class ESPServer(Thread):
             try:
                 clientsocket, address = self.socket.accept()
                 print("New connection from", address)
-                client = Client(clientsocket)
+                client = ESPClient(clientsocket)
                 client.start()
                 self.clients[address] = client
             except OSError:
@@ -45,7 +46,8 @@ class ESPServer(Thread):
 
         # Close all connections
         for client in self.clients.values():
-            client.stop()
+            if not client.stopped:
+                client.stop()
 
         # Close the server
         self.socket.shutdown(socket.SHUT_RDWR)
@@ -56,15 +58,44 @@ class ESPServer(Thread):
 
 
 
-class Client(Thread):
+class ESPClient(Thread):
 
     def __init__(self, socket):
         super().__init__()
         self.socket = socket
         self.stopped = False
+        self.ip, self.port = self.socket.getpeername()
+        self.mac = None
 
 
     def run(self):
+        data = None
+        try:
+            # Get data to init ESP connection
+            data = self.socket.recv(1024)
+        except OSError:
+            # Brutal disconnection
+            self.stopped = True
+            print(f"Client {self.ip}:{self.port} disconnected", file=stderr)
+            
+        if not data:
+            # Wrong data
+            self.stopped = True
+            print(f"Client {self.ip}:{self.port} disconnected", file=stderr)
+
+        if not self.stopped:
+            # Awaits for ESP handcheck message "ESP <mac address>"
+            split = data.decode('ascii').split(' ')
+            print(split)
+            if len(split) != 2 or split[0] != "ESP":
+                # Wrong handcheck
+                self.stopped = True
+                print(f"Client {self.ip}:{self.port} is not an awaited ESP", file=stderr)
+            else:
+                self.started = True
+                self.mac = split[1]
+                print(f"Connected  to ESP {self.mac}")
+
         while not self.stopped:
             data = None
             try:
@@ -74,6 +105,7 @@ class Client(Thread):
             if not data:
                 # Connection lost
                 self.stopped = True
+                print(f"Client {self.ip}:{self.port} disconnected")
                 break
 
             # Use the data

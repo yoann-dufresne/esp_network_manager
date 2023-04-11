@@ -12,5 +12,6 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  net.connect_server(50);
+  delay(10000);
 }

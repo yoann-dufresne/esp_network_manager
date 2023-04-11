@@ -11,6 +11,8 @@ class Network
 {
 public:
     bool verbose;
+    config_t config;
+    WiFiClient socket;
 
     Network(bool verbose = true) : verbose(verbose) {};
 
@@ -59,6 +61,8 @@ public:
             }
         }
 
+        // Connection ok
+        this->config = configs[config_idx];
         if (verbose)
         {
             Serial.print(" Connected on ");
@@ -66,7 +70,31 @@ public:
         }
 
         return true;
-    }
+    };
+
+    bool connect_server(int max_attempts = 0)
+    {
+        if (this->verbose)
+            Serial.printf("Try to reach server %s:%i ", this->config.server_ip, this->config.server_port);
+        while (!this->socket.connect(this->config.server_ip, this->config.server_port)) {
+            if (this->verbose)
+                Serial.print('.');
+            
+            if (max_attempts == 1)
+            {
+                if (this->verbose)
+                    Serial.println("\nServer not found. Abort");
+                return false;
+            }
+            else if (max_attempts != 0)
+            {
+                max_attempts -= 1;
+                delay(200);
+            }
+        }
+
+        return true;
+    };
 };
 
 #endif
