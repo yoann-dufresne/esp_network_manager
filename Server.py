@@ -16,6 +16,8 @@ class ESPServer(Thread):
         self.socket = None
 
         self.clients = {}
+        # Functions that are called after each connection
+        self.handlers = []
 
 
     def run(self):
@@ -29,9 +31,14 @@ class ESPServer(Thread):
         print("Socket server main loop")
         while not self.stopped:
             try:
+                # Create a socket for the new connection
                 clientsocket, address = self.socket.accept()
                 print("New connection from", address)
                 client = ESPClient(clientsocket)
+                # Call the callbacks on connection
+                for handler in self.handlers:
+                    handler(client)
+                # Start the client thread
                 client.start()
                 self.clients[address] = client
             except OSError:
@@ -39,6 +46,10 @@ class ESPServer(Thread):
 
         # Stop the socket before the end of the thread
         self.socket.close()
+
+
+    def register_connection_handler(self, function):
+        self.handlers.append(function)
 
 
     def stop(self):
@@ -62,13 +73,22 @@ class ESPClient(Thread):
 
     def __init__(self, socket):
         super().__init__()
+        # Socket objects
         self.socket = socket
         self.stopped = False
+        # Network + physical addresses
         self.ip, self.port = self.socket.getpeername()
         self.mac = None
+        # byte stream received
+        self.raw_bytes = []
+        # Awaiting message list
+        self.messages = []
+        # Functions called when a message has been fully received
+        self.handlers = []
 
 
-    def run(self):
+    def receive_and_parse_messages(self):
+        # --- Receive data ---
         data = None
         try:
             # Get data to init ESP connection
@@ -83,9 +103,33 @@ class ESPClient(Thread):
             self.stopped = True
             print(f"Client {self.ip}:{self.port} disconnected", file=stderr)
 
-        if not self.stopped:
+        # --- parse messages ---
+
+        self.raw_bytes.extend(data)
+
+        start_idx = 0
+        for idx in range(len(data)):
+            # End of a message => extract the message
+            if data[idx] == ord('\n'):
+                if idx != start_idx:
+                    self.messages.append(data[start_idx:idx])
+                start_idx = idx+1
+
+        # Update the raw bytes removing extracted messages
+        self.raw_bytes = self.raw_bytes[start_idx:]
+
+
+    def run(self):
+        # Looks for esp first connection
+        while not self.stopped:
+            self.receive_and_parse_messages()
+            if len(self.messages) == 0:
+                sleep(.1)
+                continue
+
             # Awaits for ESP handcheck message "ESP <mac address>"
-            split = data.decode('ascii').split(' ')
+            msg = self.messages.pop(0)
+            split = msg.decode('ascii').split(' ')
             print(split)
             if len(split) != 2 or split[0] != "ESP":
                 # Wrong handcheck
@@ -95,21 +139,19 @@ class ESPClient(Thread):
                 self.started = True
                 self.mac = split[1]
                 print(f"Connected  to ESP {self.mac}")
-
-        while not self.stopped:
-            data = None
-            try:
-                data = self.socket.recv(1024)
-            except OSError:
-                continue
-            if not data:
-                # Connection lost
-                self.stopped = True
-                print(f"Client {self.ip}:{self.port} disconnected")
                 break
 
-            # Use the data
-            print("received", repr(data))
+        # Main loop. Forward messages to registered callbacks
+        while not self.stopped:
+            # Get messages
+            self.receive_and_parse_messages()
+
+            # Transmit the messages
+            while len(self.messages) > 0:
+                msg = self.messages.pop(0)
+                for handler in self.handlers:
+                    # WARNING: The handler must be fast to not miss new messages
+                    handler(msg)
 
         self.socket.close()
 
@@ -121,7 +163,21 @@ class ESPClient(Thread):
         self.join()
 
 
+    def register_message_handler(self, function):
+        """ Register a callback function that will be called when a message has been received.
+            WARNING: The callback must be fast to execute. If not, some messages can be lost.
+        """
+        self.handlers.append(function)
+
+
+def connection_callback(esp_client):
+    esp_client.register_message_handler(msg_callback_test)
+
+def msg_callback_test(msg):
+    print("received message:", repr(msg))
+
 if __name__ == "__main__":
     server = ESPServer()
     signal(SIGINT, lambda sig, frame : server.stop())
+    server.register_connection_handler(connection_callback)
     server.start()
