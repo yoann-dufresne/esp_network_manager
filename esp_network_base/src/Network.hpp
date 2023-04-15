@@ -93,6 +93,15 @@ public:
             }
         }
 
+        // Send the first message of the protocol
+        char * connec_msg = "ESP real\n";
+        uint8_t * msg = (uint8_t *)connec_msg;
+        this->socket.write(connec_msg, 9);
+        this->socket.flush();
+        // Read acknowledgment
+        while (this->socket.isconnected() and this->socket.available() == 0)
+        { delay(10); }
+
         return true;
     };
 };
