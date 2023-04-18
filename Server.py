@@ -87,6 +87,14 @@ class ESPClient(Thread):
         self.handlers = []
 
 
+    def send_msg(self, msg):
+        """ 
+        @param msg A byte array to send. Its size must be <= 254
+        """
+        print("sending:", len(msg).to_bytes(length=1, byteorder='big', signed=False) + msg)
+        self.socket.send(len(msg).to_bytes(length=1, byteorder='big', signed=False) + msg)
+
+
     def receive_and_parse_messages(self):
         # --- Receive data ---
         data = None
@@ -103,24 +111,30 @@ class ESPClient(Thread):
             self.stopped = True
             print(f"Client {self.ip}:{self.port} disconnected", file=stderr)
 
+        if self.stopped:
+            return
+
         # --- parse messages ---
 
         self.raw_bytes.extend(data)
 
-        start_idx = 0
-        for idx in range(len(data)):
-            # End of a message => extract the message
-            if data[idx] == ord('\n'):
-                if idx != start_idx:
-                    self.messages.append(data[start_idx:idx])
-                start_idx = idx+1
+        msg_size = int.from_bytes([data[0]], "big", signed=False)
+        print(msg_size, data)
 
+        if len(data) < msg_size + 1:
+            print("Trunckated message received", file=stderr)
+            return
+
+        self.send_msg("ACK".encode("ascii"))
+        self.messages.append(data[1:msg_size+1])
+        
         # Update the raw bytes removing extracted messages
-        self.raw_bytes = self.raw_bytes[start_idx:]
+        self.raw_bytes = self.raw_bytes[msg_size+1:]
 
 
     def run(self):
         # Looks for esp first connection
+        print("coucou")
         while not self.stopped:
             self.receive_and_parse_messages()
             if len(self.messages) == 0:

@@ -12,6 +12,14 @@ void setup() {
 }
 
 void loop() {
-  net.connect_server(50);
-  delay(10000);
+  while (not net.connect_server(1)) {
+    delay(5000);
+  };
+  
+  uint8_t idx = 0;
+  while (net.send(&idx, 1))
+  {
+    idx += 1;
+    delay(1000);
+  }
 }

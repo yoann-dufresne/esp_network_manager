@@ -14,7 +14,15 @@ public:
     config_t config;
     WiFiClient socket;
 
-    Network(bool verbose = true) : verbose(verbose) {};
+    int msg_size;
+    uint8_t * msg_buffer;
+
+    Network(bool verbose = true) : verbose(verbose), msg_size(0), msg_buffer(new uint8_t[256]) {};
+
+    ~Network()
+    {
+        delete[] msg_buffer;
+    }
 
     bool connect_network(int max_attempts = 0)
     {
@@ -72,6 +80,7 @@ public:
         return true;
     };
 
+
     bool connect_server(int max_attempts = 0)
     {
         if (this->verbose)
@@ -92,17 +101,114 @@ public:
                 delay(200);
             }
         }
+        Serial.println();
+        // Wait for the connection to be fully operational
+        delay(500);
 
         // Send the first message of the protocol
-        char * connec_msg = "ESP real\n";
-        uint8_t * msg = (uint8_t *)connec_msg;
-        this->socket.write(connec_msg, 9);
-        this->socket.flush();
-        // Read acknowledgment
-        while (this->socket.isconnected() and this->socket.available() == 0)
-        { delay(10); }
+        char * connec_msg = "ESP real";
+        return this->send((uint8_t *)connec_msg, 8);
+    };
 
-        return true;
+
+    /** Read the next message on the socket and return the buffer containing it.
+     * Maximum message size is 255. Stop waiting for the message after 100 ms
+    */
+    uint8_t * read_answer(const unsigned long time_to_wait = 1000ul)
+    {
+        unsigned long last_contact = millis();
+        bool msg_over = false;
+        this->msg_size = 0;
+        int idx = 0;
+
+        // Construct the message
+        while (not msg_over)
+        {
+            // Waiting for the next bytes to arrive
+            while (this->socket.available() == 0)
+            {
+                if (millis() - last_contact > time_to_wait)
+                {
+                    Serial.println();
+                    Serial.println("Network.read_answer: timeout");
+                    this->msg_size = 0;
+                    return nullptr;
+                }
+            }
+
+            // Dertermine the message size
+            if (this->msg_size == 0) this->msg_size = this->socket.read();
+
+            // Read available bytes from the current message
+            int bytes_to_read = min(this->msg_size, this->socket.available());
+            for ( ; idx<bytes_to_read ; idx++)
+            {
+                this->msg_buffer[idx] = this->socket.read();
+            }
+
+            if (idx == this->msg_size)
+                msg_over = true;
+            last_contact = millis();
+        }
+
+        return this->msg_buffer;
+    };
+
+    /** Send a message through the TCP connection
+     * @param msg Message to transfer. Max size is 255.
+     * @param size Size of the message
+    */
+    bool send(uint8_t * msg, uint8_t size)
+    {
+        const size_t max_attempts = 1;
+        const unsigned long time_to_ack = 3000ul;
+        bool sent = false;
+        size_t nb_attempts = 0;
+
+        uint8_t * buffer = new uint8_t[size+1];
+        buffer[0] = size;
+        memcpy(buffer+1, msg, size);
+
+        Serial.printf("Sending msg: (%d) ", size);
+        for (int i(0) ; i<size+1 ; i++)
+        {
+            Serial.print(buffer[i]);
+            Serial.print(' ');
+        }
+        Serial.println();
+
+        while (nb_attempts < max_attempts and not sent)
+        {
+            Serial.printf("Sending attempt %d\n", nb_attempts);
+            // Try to send the message
+            this->socket.write(buffer, size+1);
+            this->socket.flush(); 
+            sent = true;
+
+            // Read acknowledgment
+            uint8_t * answer = this->read_answer(time_to_ack);
+            if (answer == nullptr)
+            {
+                Serial.println("Network.send: No server answer on handcheck");
+                sent = false;
+            }
+            // Message too short
+            else if (this->msg_size < 3)
+            {
+                Serial.println("Network.send: Bad server ACK");
+                sent = false;
+            }
+            // No ack in the message
+            else if (answer[0] != 'A' or answer[1] != 'C' or answer[2] != 'K')
+            {
+                Serial.println("Network.send: Bad server ACK");
+                sent = false;
+            }
+            nb_attempts += 1;
+        }
+
+        delete[] buffer;
+        return sent;
     };
 };
 
