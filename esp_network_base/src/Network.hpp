@@ -1,7 +1,8 @@
 #include <Arduino.h>
+#include <WiFi.h>
 
 #include "config.h"
-#include "WiFi.h"
+
 
 
 #ifndef NETWORK_H
@@ -17,7 +18,10 @@ public:
     int msg_size;
     uint8_t * msg_buffer;
 
-    Network(bool verbose = true) : verbose(verbose), msg_size(0), msg_buffer(new uint8_t[256]) {};
+    Network(bool verbose = true) : verbose(verbose), msg_size(0), msg_buffer(new uint8_t[256]) {
+        WiFi.mode(WIFI_STA);
+        WiFi.disconnect();
+    };
 
     ~Network()
     {
@@ -46,6 +50,24 @@ public:
                     Serial.print('.');
                 wait_loops -= 1;
             }
+
+            if (WiFi.status() != WL_CONNECTED)
+            {
+                int n = WiFi.scanNetworks();
+                Serial.println(" networks found");
+                for (int i = 0; i < n; ++i) {
+                    // Print SSID and RSSI for each network found
+                    Serial.print(i + 1);
+                    Serial.print(": ");
+                    Serial.print(WiFi.SSID(i));
+                    Serial.print(" (");
+                    Serial.print(WiFi.RSSI(i));
+                    Serial.print(")");
+                    Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
+                    delay(10);
+                }
+            }
+
             // If not connected
             if (WiFi.status() != WL_CONNECTED)
             {
@@ -161,8 +183,8 @@ public:
     bool send(uint8_t * msg, uint8_t size)
     {
         const size_t max_attempts = 1;
-        const unsigned long time_to_ack = 3000ul;
-        bool sent = false;
+        const unsigned long time_to_ack = 50ul;
+        //bool sent = false;
         size_t nb_attempts = 0;
 
         uint8_t * buffer = new uint8_t[size+1];
@@ -177,38 +199,41 @@ public:
         }
         Serial.println();
 
-        while (nb_attempts < max_attempts and not sent)
-        {
-            Serial.printf("Sending attempt %d\n", nb_attempts);
-            // Try to send the message
-            this->socket.write(buffer, size+1);
-            this->socket.flush(); 
-            sent = true;
+        size_t sent = this->socket.write(buffer, size+1);
+        this->socket.flush(); 
 
-            // Read acknowledgment
-            uint8_t * answer = this->read_answer(time_to_ack);
-            if (answer == nullptr)
-            {
-                Serial.println("Network.send: No server answer on handcheck");
-                sent = false;
-            }
-            // Message too short
-            else if (this->msg_size < 3)
-            {
-                Serial.println("Network.send: Bad server ACK");
-                sent = false;
-            }
-            // No ack in the message
-            else if (answer[0] != 'A' or answer[1] != 'C' or answer[2] != 'K')
-            {
-                Serial.println("Network.send: Bad server ACK");
-                sent = false;
-            }
-            nb_attempts += 1;
-        }
+        // while (nb_attempts < max_attempts and not sent)
+        // {
+        //     Serial.printf("Sending attempt %d\n", nb_attempts);
+        //     // Try to send the message
+        //     size_t sent = this->socket.write(buffer, size+1);
+        //     this->socket.flush(); 
+        //     sent = true;
+
+        //     // Read acknowledgment
+        //     uint8_t * answer = this->read_answer(time_to_ack);
+        //     if (answer == nullptr)
+        //     {
+        //         Serial.println("Network.send: No server answer on handcheck");
+        //         sent = false;
+        //     }
+        //     // Message too short
+        //     else if (this->msg_size < 3)
+        //     {
+        //         Serial.println("Network.send: Bad server ACK");
+        //         sent = false;
+        //     }
+        //     // No ack in the message
+        //     else if (answer[0] != 'A' or answer[1] != 'C' or answer[2] != 'K')
+        //     {
+        //         Serial.println("Network.send: Bad server ACK");
+        //         sent = false;
+        //     }
+        //     nb_attempts += 1;
+        // }
 
         delete[] buffer;
-        return sent;
+        return sent == size+1;
     };
 };
 

@@ -125,7 +125,7 @@ class ESPClient(Thread):
             print("Trunckated message received", file=stderr)
             return
 
-        self.send_msg("ACK".encode("ascii"))
+        # self.send_msg("ACK".encode("ascii"))
         self.messages.append(data[1:msg_size+1])
         
         # Update the raw bytes removing extracted messages
@@ -134,11 +134,10 @@ class ESPClient(Thread):
 
     def run(self):
         # Looks for esp first connection
-        print("coucou")
         while not self.stopped:
             self.receive_and_parse_messages()
             if len(self.messages) == 0:
-                sleep(.1)
+                sleep(.01)
                 continue
 
             # Awaits for ESP handcheck message "ESP <mac address>"
@@ -162,6 +161,7 @@ class ESPClient(Thread):
 
             # Transmit the messages
             while len(self.messages) > 0:
+                print("message")
                 msg = self.messages.pop(0)
                 for handler in self.handlers:
                     # WARNING: The handler must be fast to not miss new messages
