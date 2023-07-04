@@ -28,6 +28,11 @@ public:
         delete[] msg_buffer;
     }
 
+    bool is_connected_on_wifi()
+    {
+        return WiFi.status() == WL_CONNECTED;
+    }
+
     bool connect_network(int max_attempts = 0)
     {
         int config_idx = 0;
@@ -103,6 +108,11 @@ public:
     };
 
 
+    bool is_connected_to_server()
+    {
+        return this->socket.connected();
+    }
+
     bool connect_server(int max_attempts = 0)
     {
         if (this->verbose)
@@ -128,15 +138,16 @@ public:
         delay(500);
 
         // Send the first message of the protocol
-        char * connec_msg = "ESP real";
-        return this->send((uint8_t *)connec_msg, 8);
+        uint8_t connec_msg[12] = {'E', 'S', 'P', ' ', 0, 0, 0, 0, 0, 0, 0, 0};
+        WiFi.macAddress(connec_msg+4);
+        return this->send(connec_msg, 12);
     };
 
 
     /** Read the next message on the socket and return the buffer containing it.
-     * Maximum message size is 255. Stop waiting for the message after 100 ms
+     * Maximum message size is 255. Stop waiting for the message after time to wait ms
     */
-    uint8_t * read_answer(const unsigned long time_to_wait = 1000ul)
+    uint8_t * read_message(const unsigned long time_to_wait = 100ul)
     {
         unsigned long last_contact = millis();
         bool msg_over = false;
@@ -151,8 +162,6 @@ public:
             {
                 if (millis() - last_contact > time_to_wait)
                 {
-                    Serial.println();
-                    Serial.println("Network.read_answer: timeout");
                     this->msg_size = 0;
                     return nullptr;
                 }
@@ -201,36 +210,6 @@ public:
 
         size_t sent = this->socket.write(buffer, size+1);
         this->socket.flush(); 
-
-        // while (nb_attempts < max_attempts and not sent)
-        // {
-        //     Serial.printf("Sending attempt %d\n", nb_attempts);
-        //     // Try to send the message
-        //     size_t sent = this->socket.write(buffer, size+1);
-        //     this->socket.flush(); 
-        //     sent = true;
-
-        //     // Read acknowledgment
-        //     uint8_t * answer = this->read_answer(time_to_ack);
-        //     if (answer == nullptr)
-        //     {
-        //         Serial.println("Network.send: No server answer on handcheck");
-        //         sent = false;
-        //     }
-        //     // Message too short
-        //     else if (this->msg_size < 3)
-        //     {
-        //         Serial.println("Network.send: Bad server ACK");
-        //         sent = false;
-        //     }
-        //     // No ack in the message
-        //     else if (answer[0] != 'A' or answer[1] != 'C' or answer[2] != 'K')
-        //     {
-        //         Serial.println("Network.send: Bad server ACK");
-        //         sent = false;
-        //     }
-        //     nb_attempts += 1;
-        // }
 
         delete[] buffer;
         return sent == size+1;

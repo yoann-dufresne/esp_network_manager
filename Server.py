@@ -1,5 +1,5 @@
 from threading import Thread
-from time import sleep
+from time import sleep, time
 from signal import signal, SIGINT
 from sys import stderr
 import socket
@@ -34,7 +34,7 @@ class ESPServer(Thread):
                 # Create a socket for the new connection
                 clientsocket, address = self.socket.accept()
                 print("New connection from", address)
-                client = ESPClient(clientsocket)
+                client = ESPClient(self, clientsocket)
                 # Call the callbacks on connection
                 for handler in self.handlers:
                     handler(client)
@@ -68,12 +68,17 @@ class ESPServer(Thread):
         print("Server stopped")
 
 
+    def esp_connected(self, client):
+        pass
+
+
 
 class ESPClient(Thread):
 
-    def __init__(self, socket):
+    def __init__(self, server, socket):
         super().__init__()
         # Socket objects
+        self.server = server
         self.socket = socket
         self.stopped = False
         # Network + physical addresses
@@ -91,7 +96,6 @@ class ESPClient(Thread):
         """ 
         @param msg A byte array to send. Its size must be <= 254
         """
-        print("sending:", len(msg).to_bytes(length=1, byteorder='big', signed=False) + msg)
         self.socket.send(len(msg).to_bytes(length=1, byteorder='big', signed=False) + msg)
 
 
@@ -119,7 +123,6 @@ class ESPClient(Thread):
         self.raw_bytes.extend(data)
 
         msg_size = int.from_bytes([data[0]], "big", signed=False)
-        print(msg_size, data)
 
         if len(data) < msg_size + 1:
             print("Trunckated message received", file=stderr)
@@ -142,16 +145,17 @@ class ESPClient(Thread):
 
             # Awaits for ESP handcheck message "ESP <mac address>"
             msg = self.messages.pop(0)
-            split = msg.decode('ascii').split(' ')
-            print(split)
-            if len(split) != 2 or split[0] != "ESP":
+            head = msg[:4].decode('ascii')
+            # print(split)
+            if head != "ESP ":
                 # Wrong handcheck
                 self.stopped = True
                 print(f"Client {self.ip}:{self.port} is not an awaited ESP", file=stderr)
             else:
                 self.started = True
-                self.mac = split[1]
-                print(f"Connected  to ESP {self.mac}")
+                self.mac = msg[4:]
+                print(f"Connected  to ESP {list(self.mac)}")
+                self.server.esp_connected(self)
                 break
 
         # Main loop. Forward messages to registered callbacks
@@ -161,11 +165,10 @@ class ESPClient(Thread):
 
             # Transmit the messages
             while len(self.messages) > 0:
-                print("message")
                 msg = self.messages.pop(0)
                 for handler in self.handlers:
                     # WARNING: The handler must be fast to not miss new messages
-                    handler(msg)
+                    handler(self, msg)
 
         self.socket.close()
 
@@ -184,11 +187,11 @@ class ESPClient(Thread):
         self.handlers.append(function)
 
 
-def connection_callback(esp_client):
-    esp_client.register_message_handler(msg_callback_test)
+# def connection_callback(esp_client):
+#     esp_client.register_message_handler(esp_client, msg_callback_test)
 
-def msg_callback_test(msg):
-    print("received message:", repr(msg))
+# def msg_callback_test(esp_client, msg):
+#     print("received message:", repr(msg))
 
 if __name__ == "__main__":
     server = ESPServer()
