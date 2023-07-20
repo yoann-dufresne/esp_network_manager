@@ -101,7 +101,7 @@ public:
         if (verbose)
         {
             Serial.print(" Connected on ");
-            Serial.println( WiFi.localIP());
+            Serial.println(WiFi.localIP());
         }
 
         return true;

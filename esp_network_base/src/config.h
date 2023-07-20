@@ -12,19 +12,14 @@ struct config_s
 };
 typedef struct config_s config_t;
 
+const size_t num_configs = 1;
 
-const config_t configs[2] = {
+const config_t configs[num_configs] = {
 	{
-		"Your Wifi network name 1",
-		"Your password 1",
-		"The IP server address 1",
-		15555
-	},
-	{
-		"Your Wifi network name 2",
-		"Your password 2",
-		"The IP server address 2",
-		15556
+		"BimYo",
+		"Le voila le mot de passe !",
+		"192.168.1.71",
+		4040
 	}
 };
 
