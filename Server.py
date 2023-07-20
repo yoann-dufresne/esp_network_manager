@@ -4,7 +4,6 @@ from signal import signal, SIGINT
 from sys import stderr
 import socket
 
-
 class ESPServer(Thread):
 
     def __init__(self, port=4040):
@@ -23,7 +22,17 @@ class ESPServer(Thread):
     def run(self):
         # Create + bind the socket
         self.socket = socket.create_server(("", self.port))
+        '''
+        self.socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM | socket.TCP_NODELAY)
+        # try to reduce delay (doesn't work)
+        self.socket.setblocking(False)
+        # self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.socket.bind(("",self.port))
+        self.socket.listen(5)
+        '''
+
         print("socket server created on port", self.port)
+
         
         idx=1
         self.started = True
@@ -33,6 +42,7 @@ class ESPServer(Thread):
             try:
                 # Create a socket for the new connection
                 clientsocket, address = self.socket.accept()
+                clientsocket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 print("New connection from", address)
                 client = ESPClient(self, clientsocket)
                 # Call the callbacks on connection
@@ -53,8 +63,6 @@ class ESPServer(Thread):
 
 
     def stop(self):
-        self.stopped = True
-
         # Close all connections
         for client in self.clients.values():
             if not client.stopped:
@@ -62,6 +70,7 @@ class ESPServer(Thread):
 
         # Close the server
         self.socket.shutdown(socket.SHUT_RDWR)
+        self.stopped = True
         print("Server stop triggered")
         self.join()
 
@@ -175,23 +184,24 @@ class ESPClient(Thread):
 
     def stop(self):
         if not self.stopped:
-            self.stopped = True
             self.socket.shutdown(socket.SHUT_RDWR)
+            self.stopped = True
         self.join()
 
 
-    def register_message_handler(self, function):
+    def register_message_handler(self, esp_client, function):
         """ Register a callback function that will be called when a message has been received.
             WARNING: The callback must be fast to execute. If not, some messages can be lost.
         """
         self.handlers.append(function)
 
 
-# def connection_callback(esp_client):
-#     esp_client.register_message_handler(esp_client, msg_callback_test)
+def connection_callback(esp_client):
+    esp_client.register_message_handler(esp_client, msg_callback_test)
 
-# def msg_callback_test(esp_client, msg):
-#     print("received message:", repr(msg))
+def msg_callback_test(esp_client, msg):
+    print("received message:", repr(msg))
+
 
 if __name__ == "__main__":
     server = ESPServer()
